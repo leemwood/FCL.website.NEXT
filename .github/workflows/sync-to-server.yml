@@ -25,13 +25,28 @@ jobs:
           sudo apt-get install -y -qq lftp sshpass rsync
           echo "lftp、sshpass、rsync 安装完成"
 
+      - name: 检查 FTB 配置
+        id: check-ftb
+        env:
+          FTB_USE: ${{ secrets.FTB_USE }}
+          FTB_PASSWORD: ${{ secrets.FTB_PASSWORD }}
+          HOST: ${{ secrets.HOST }}
+        run: |
+          if [ -n "${FTB_USE:-}" ] && [ -n "${FTB_PASSWORD:-}" ] && [ -n "${HOST:-}" ]; then
+            echo "ftb-ready=true" >> $GITHUB_OUTPUT
+            echo "FTB secrets 已配置"
+          else
+            echo "ftb-ready=false" >> $GITHUB_OUTPUT
+            echo "FTB secrets 未配置"
+          fi
+
       - name: FTB 优先同步至服务器根目录
         id: ftb-sync
+        if: ${{ steps.check-ftb.outputs.ftb-ready == 'true' }}
         env:
           FTB_HOST: ${{ secrets.HOST }}
           FTB_USE: ${{ secrets.FTB_USE }}
           FTB_PASSWORD: ${{ secrets.FTB_PASSWORD }}
-        if: ${{ secrets.FTB_USE != '' && secrets.FTB_PASSWORD != '' && secrets.HOST != '' }}
         run: |
           echo "开始 FTB 同步至根目录..."
 
@@ -53,14 +68,19 @@ jobs:
 
           echo "FTB 同步完成"
 
-      - name: SSH 同步至服务器指定路径
+      - name: SSH 兜底同步至服务器指定路径
+        if: ${{ !cancelled() && steps.ftb-sync.outcome != 'success' }}
         env:
           HOST: ${{ secrets.HOST }}
           HOST_NAME: ${{ secrets.HOST_NAME }}
           HOST_PASSWORD: ${{ secrets.HOST_PASSWORD }}
           HOST_PATH: ${{ secrets.HOST_PATH }}
-        if: ${{ !cancelled() && steps.ftb-sync.outcome != 'success' && secrets.HOST_NAME != '' && secrets.HOST_PASSWORD != '' && secrets.HOST_PATH != '' && secrets.HOST != '' }}
         run: |
+          if [ -z "${HOST_NAME:-}" ] || [ -z "${HOST_PASSWORD:-}" ] || [ -z "${HOST_PATH:-}" ] || [ -z "${HOST:-}" ]; then
+            echo "SSH secrets 未配置，跳过"
+            exit 0
+          fi
+
           echo "开始 SSH 同步至 $HOST_PATH ..."
 
           sshpass -p "$HOST_PASSWORD" rsync -avz --delete \
