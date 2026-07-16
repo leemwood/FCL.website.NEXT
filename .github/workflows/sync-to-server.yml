@@ -1,0 +1,76 @@
+name: 同步文件至服务器
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-to-server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装同步工具
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lftp sshpass rsync
+          echo "lftp、sshpass、rsync 安装完成"
+
+      - name: FTB 优先同步至服务器根目录
+        id: ftb-sync
+        env:
+          FTB_HOST: ${{ secrets.HOST }}
+          FTB_USE: ${{ secrets.FTB_USE }}
+          FTB_PASSWORD: ${{ secrets.FTB_PASSWORD }}
+        if: ${{ secrets.FTB_USE != '' && secrets.FTB_PASSWORD != '' && secrets.HOST != '' }}
+        run: |
+          echo "开始 FTB 同步至根目录..."
+
+          lftp -u "$FTB_USE","$FTB_PASSWORD" "$FTB_HOST" << 'LFTP_EOF'
+          set ftp:ssl-allow yes
+          set ftp:ssl-force yes
+          set ftp:ssl-protect-data yes
+          set ssl:verify-certificate no
+          mirror --reverse --verbose --delete --parallel=5 \
+            --exclude-glob .git/ \
+            --exclude-glob .github/ \
+            --exclude-glob .vscode/ \
+            --exclude-glob node_modules/ \
+            --exclude-glob .gitignore \
+            --exclude-glob .gitattributes \
+            ./ /
+          bye
+          LFTP_EOF
+
+          echo "FTB 同步完成"
+
+      - name: SSH 同步至服务器指定路径
+        env:
+          HOST: ${{ secrets.HOST }}
+          HOST_NAME: ${{ secrets.HOST_NAME }}
+          HOST_PASSWORD: ${{ secrets.HOST_PASSWORD }}
+          HOST_PATH: ${{ secrets.HOST_PATH }}
+        if: ${{ !cancelled() && steps.ftb-sync.outcome != 'success' && secrets.HOST_NAME != '' && secrets.HOST_PASSWORD != '' && secrets.HOST_PATH != '' && secrets.HOST != '' }}
+        run: |
+          echo "开始 SSH 同步至 $HOST_PATH ..."
+
+          sshpass -p "$HOST_PASSWORD" rsync -avz --delete \
+            -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.vscode/' \
+            --exclude='node_modules/' \
+            --exclude='.gitignore' \
+            --exclude='.gitattributes' \
+            ./ "$HOST_NAME@$HOST:$HOST_PATH"
+
+          echo "SSH 同步完成"
