@@ -62,6 +62,13 @@
             "name": "MCinaBox",
             "nextUrl": "/data/down/mb/index.json",
             "nameIsSoftname": true
+          },
+          {
+            "name": "ZPCL Launcher",
+            "nextUrl": "/data/down/zpcl/index.json",
+            "nameIsSoftname": true,
+            "icon": "/media/img/ZPCLicon.png",
+            "description": "基于 Zalith Launcher 2 的非官方修改版（PCL2 风格）"
           }
         ]
       },
